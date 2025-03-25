@@ -1,0 +1,13 @@
+services:
+  bl4ck:
+    build: ./src
+    container_name: bl4ck_luip
+    command: bash -c "alembic upgrade head && uvicorn app:app --host 0.0.0.0 --port 7767 --log-level debug --workers 1 --forwarded-allow-ips='*' --proxy-headers"
+    network_mode: "host"
+    ports:
+      "127.0.0.1:7767:7767"
+    env_file:
+      - ".env"
+    volumes:
+      - ./.env:/usr/src/app/.env
+      - ./volumes/ssh_keys/:/usr/src/app/keys/
