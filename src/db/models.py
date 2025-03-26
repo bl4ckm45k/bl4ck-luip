@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint, LargeBinary
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint, LargeBinary, Boolean
 from sqlalchemy.orm import declarative_base, relationship
 from fastapi_storages import FileSystemStorage
 from fastapi_storages.integrations.sqlalchemy import FileType
-from utils.private_data import decrypt_password, encrypt_password
+
 storage = FileSystemStorage(path="./keys")
 Base = declarative_base()
 
@@ -18,7 +18,7 @@ class Node(Base):
     ssh_password = Column(String)
     ssh_private_key = Column(FileType(storage=storage))
     ssh_pk_passphrase = Column(String)
-
+    is_core = Column(Boolean, default=False)
     # OneToMany
     banned_ips = relationship("BannedIP", back_populates="node")
 
