@@ -98,7 +98,7 @@ class NodeAdmin(ModelView, model=Node):
             if data['ssh_password'] and node_data.ssh_password != data['ssh_password']:
                 data["ssh_password"] = encrypt_password(data["ssh_password"])
         if "ssh_pk_passphrase" in data:
-            if data['ssh_pk_passphrase'] and node_data.ssh_pk_passphrase != data['ssh_pk_passphrase']:
+            if data['ssh_pk_passphrase'] and (not node_data or (node_data.ssh_pk_passphrase != data['ssh_pk_passphrase'])):
                 data["ssh_pk_passphrase"] = encrypt_password(data["ssh_pk_passphrase"])
         if "ssh_private_key" in data:
             file = data["ssh_private_key"]
