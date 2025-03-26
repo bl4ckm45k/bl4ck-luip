@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .database import async_session
 from .models import BannedIP, Node
-from .schemas import BanCreate, BanResponse, NodeBase
+from .schemas import BanCreate, BanResponse, NodeBase, NodeResponse
 
 
 class BaseRepository:
@@ -41,6 +41,7 @@ class BaseRepository:
             result = await session.execute(query)
             await session.commit()
         return 0 < result.rowcount
+
 
 class BannedIPRepository(BaseRepository):
     model = BannedIP
@@ -121,7 +122,7 @@ class NodesRepository(BaseRepository):
         return result.scalars().one_or_none()
 
     @classmethod
-    async def get_all_nodes(cls) -> Sequence[Node]:
+    async def get_all_nodes(cls) -> Sequence[NodeResponse]:
         query = select(cls.model).order_by(Node.id)
         async with async_session() as session:
             result = await session.execute(query)
