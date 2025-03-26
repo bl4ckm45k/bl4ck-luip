@@ -41,7 +41,7 @@ class Settings:
     @staticmethod
     def from_env(env: Env):
         ssl_enabled = env.bool("SSL_ENABLED", False)
-        read_panel = env.bool("READ_PANEL", False)
+        read_panel = env.bool("MARZBAN_READ_PANEL", False)
         max_connections = env.int("MAX_CONNECTIONS", 3)
         ban_minutes = env.int("BAN_MINUTES", 5)
         ban_seconds = ban_minutes * 60
