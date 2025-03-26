@@ -1,5 +1,3 @@
-# README
-
 ## Description
 This project is designed for managing connections and blocking IP addresses using Marzban and a database.
 
