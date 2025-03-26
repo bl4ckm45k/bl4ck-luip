@@ -17,3 +17,5 @@ paramiko~=3.5.0
 psycopg2-binary
 argon2_cffi>=23.1.0
 itsdangerous>=2.2.0
+fastapi_storages
+cryptography>=44.0.2
