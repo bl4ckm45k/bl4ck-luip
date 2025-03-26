@@ -1,15 +1,19 @@
 import asyncio
 import logging
 import re
+from typing import Sequence
 from urllib.parse import urlencode
 
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatusCode
 
+from db.repository import NodesRepository
+from db.schemas import NodeResponse
 from loader import api, redis_cli, config, marz_token
 from utils.manager import ban_ip
 
 logging.getLogger(__name__)
+
 
 class WsService:
     def __init__(self):
@@ -28,7 +32,7 @@ class WsService:
             logging.info('Токен отсутствует, обновляем...')
             await self.refresh_token()
 
-        nodes = await api.get_nodes(self.access_token)
+        nodes = await NodesRepository.get_all_nodes()
         self.build_connections(nodes)
 
         if self.connections:
@@ -49,22 +53,21 @@ class WsService:
 
             await asyncio.sleep(self.reconnect_interval)
 
-    def build_connections(self, nodes):
+    def build_connections(self, nodes: Sequence[NodeResponse]):
         """Формирует список WebSocket подключений."""
         protocol = 'wss://' if config.settings.ssl_enabled else 'ws://'
         query_params = urlencode({'interval': 5, 'token': self.access_token})
 
-        self.connections = [
-            (f"{protocol}{config.marzban.host}/api/node/{node.id}/logs?{query_params}",
-             {'id': node.id, 'address': node.address})
-            for node in nodes
-        ]
-
-        if config.settings.read_panel:
-            self.connections.append(
-                (f"{protocol}{config.marzban.host}/api/core/logs?{query_params}",
-                 {'id': 'core', 'address': 'Panel'})
-            )
+        for node in nodes:
+            if node.is_core:
+                self.connections.append(
+                    (f"{protocol}{config.marzban.host}/api/core/logs?{query_params}",
+                     {'id': node.node_id, 'address': node.node_address})
+                )
+            else:
+                self.connections.append(
+                    (f"{protocol}{config.marzban.host}/api/node/{node.id}/logs?{query_params}",
+                     {'id': node.node_id, 'address': node.node_address}))
 
     async def handle_connection(self, websocket, node_info):
         async for message in websocket:
@@ -79,12 +82,14 @@ class WsService:
 
             connections_key = f"connections:{email}"
             current_ips = await redis_cli.smembers(connections_key)
+            count_ips = await redis_cli.scard(connections_key)
             if not current_ips or ip not in current_ips:
                 logging.info(f'{ip} not in connections list for user {email}')
                 await redis_cli.sadd(connections_key, ip)
                 await redis_cli.expire(connections_key, config.settings.ban_seconds)
+                count_ips += 1
 
-            if await redis_cli.scard(connections_key) > config.settings.max_connections:
+            if count_ips > config.settings.max_connections:
                 await self.ban_excess_ips(email, current_ips, node_info)
 
     async def ban_excess_ips(self, email, current_ips, node_info):
