@@ -1,23 +1,25 @@
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 
-import betterlogging as bl
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from db.database import engine
 from db.models import Base
+from loader import config
+from logger import log_manager, get_logger
 from routes.admin import setup_admin
 from utils.manager import unban_expired, load_nodes
 from websocket import WsService
 
+# Get logger for this module
+logger = get_logger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    logging.info(f'Starting web app')
+    logger.info('Starting web application')
     await load_nodes()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -27,6 +29,7 @@ async def lifespan(app: FastAPI):
     ws = WsService()
     asyncio.create_task(ws.start())
     yield
+    logger.info('Shutting down web application')
 
 
 def repeat_unban():
@@ -36,25 +39,18 @@ def repeat_unban():
 
 
 def setup_logging():
-    log_level = logging.INFO
-    bl.basic_colorized_config(level=log_level)
+    """Initialize application logging with improved settings."""
+    # Configure logging based on environment
+    log_manager.setup_from_config(environment='production')
 
-    logging.basicConfig(
-        level=log_level,
-        format="%(filename)s:%(lineno)d #%(levelname)-8s [%(asctime)s] - %(name)s - %(message)s",
-    )
-    # logging.getLogger(__name__)
-    logging.getLogger("httpcore.http11").setLevel(logging.ERROR)
-    logging.getLogger("httpx").setLevel(logging.ERROR)
-    logging.getLogger("websockets.client").setLevel(logging.INFO)
-    logging.getLogger("paramiko.transport").setLevel(logging.ERROR)
+    logger.info("Logging system initialized")
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.settings.allowed_hosts,
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
@@ -62,14 +58,12 @@ app.add_middleware(
 
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=[
-        "*",
-        "*"
-    ]
+    allowed_hosts=config.settings.allowed_hosts
 )
 
 if __name__ == "__main__":
     import uvicorn
 
     setup_logging()
+    logger.info(f"Starting server with hosts: {config.settings.allowed_hosts}")
     uvicorn.run(app, host="0.0.0.0", port=7767)
