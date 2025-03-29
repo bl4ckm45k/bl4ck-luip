@@ -15,7 +15,7 @@ class LogManager:
     """
 
     # Standard log format
-    DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    DEFAULT_LOG_FORMAT = "%(filename)s:%(lineno)d #%(levelname)-8s [%(asctime)s] - %(name)s - %(message)s"
 
     def __init__(self):
         """Initialize the logging manager."""
@@ -93,7 +93,7 @@ class LogManager:
             # Configure based on environment
             if environment == "production":
                 self.configure(
-                    log_level=logging.WARNING,
+                    log_level=logging.INFO,
                     log_to_console=True
                 )
             else:  # development

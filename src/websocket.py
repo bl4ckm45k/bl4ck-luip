@@ -151,7 +151,7 @@ class WsService:
 
         # Проверяем, не выполняется ли уже операция бана
         if await redis_cache.get(ban_operation_key):
-            logger.debug(f"Операция бана для {email} уже выполняется, пропускаем")
+            logger.debug(f"The ban operation for {email} is already in progress, skipping it")
             return
 
         # Устанавливаем флаг, что операция бана началась (с коротким TTL)

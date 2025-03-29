@@ -1,10 +1,13 @@
 import sys
+
 import redis.asyncio as redis
 from marzban import MarzbanAPI
 
 from config import load_config
+from logger import log_manager
 from utils.marz_client import MarzTokenCache
 
+log_manager.setup_from_config(environment='production')
 config = load_config()
 
 if sys.platform == 'win32':
