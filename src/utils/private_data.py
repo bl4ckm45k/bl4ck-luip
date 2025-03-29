@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 
 from Crypto.Cipher import AES
 
@@ -27,3 +28,8 @@ def decrypt_password(encrypted_password: str) -> str:
         return cipher.decrypt_and_verify(ciphertext, tag).decode()  # Расшифровываем и проверяем подлинность
     except AttributeError:
         return ''
+    except ValueError as e:
+        if "MAC check failed" == str(e):
+            raise ValueError(f"MAC check failed: Maybe you change secret key?")
+        logging.error(f'', exc_info=True)
+        raise e
