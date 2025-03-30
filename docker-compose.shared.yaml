@@ -17,6 +17,6 @@ services:
 
 networks:
   shared-network:
-    driver: bridge
+    external: true
   bl4ck-luip-network:
     driver: bridge
