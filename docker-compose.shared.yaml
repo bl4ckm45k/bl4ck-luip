@@ -1,6 +1,6 @@
 services:
   bl4ck:
-    image: bl4ck-luip:1.0
+    image: bl4ckm45k/bl4ck-luip:1.0
     container_name: bl4ck_luip
     command: bash -c "alembic upgrade head && uvicorn app:app --host 0.0.0.0 --port 7767 --log-level debug --workers 1 --forwarded-allow-ips='*' --proxy-headers"
     networks:
