@@ -9,7 +9,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from loader import config
 from logger import get_logger
 from routes.admin import setup_admin
-from src.db.database import create_db
 from utils.manager import unban_expired, load_nodes
 from websocket import WsService
 
