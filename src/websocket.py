@@ -23,7 +23,10 @@ class WsService:
         self.access_token = ''
         self.connections = []  # List of tuples (url, node_info)
         self.reconnect_interval = 10  # Reconnection interval (seconds)
+        self.token_refresh_attempts = 0  # Counter for token refresh attempts
         self.panel_address = config.marzban.host.split(':')[0]
+        self.shutdown_event = asyncio.Event()
+        self.active_tasks = []
 
     async def start(self):
         """Starts the WebSocket connection process."""
@@ -40,28 +43,79 @@ class WsService:
         self.build_connections(nodes)
 
         if self.connections:
-            await asyncio.gather(*[self.connect_to_websocket(url, node_info) for url, node_info in self.connections])
+            # Create tasks for each connection and track them
+            self.active_tasks = [
+                asyncio.create_task(self.connect_to_websocket(url, node_info))
+                for url, node_info in self.connections
+            ]
+            
+            # Wait for all tasks to complete or shutdown
+            try:
+                await asyncio.gather(*self.active_tasks, return_exceptions=True)
+            except Exception as e:
+                logger.error(f"Error in WebSocket connections: {e}", exc_info=True)
 
     async def connect_to_websocket(self, ws_url, node_info):
         """
-        Connects to a WebSocket and processes messages.
+        Connects to a WebSocket and processes messages with improved reconnection logic.
         
         Args:
             ws_url: WebSocket URL to connect to
             node_info: Dictionary with node information
         """
-        while True:
+        reconnect_attempts = 0
+        
+        while not self.shutdown_event.is_set():
             try:
                 async with websockets.connect(ws_url) as websocket:
                     logger.info(f"Connected to WebSocket: {node_info['address']}")
+                    reconnect_attempts = 0  # Reset attempts on successful connection
+                    self.token_refresh_attempts = 0  # Reset token refresh attempts
                     await self.handle_connection(websocket, node_info)
-            except (ConnectionClosed, InvalidStatusCode):
-                logger.warning(f"Lost connection to {node_info['address']}. Reconnecting...")
-                await self.refresh_token()
+                    
+            except ConnectionClosed as e:
+                logger.warning(f"WebSocket connection closed for {node_info['address']}: {e}")
+                reconnect_attempts += 1
+                
+                # Always try to reconnect, but refresh token periodically
+                if reconnect_attempts % 10 == 0:  # Refresh token every 10 reconnection attempts
+                    logger.warning(f"Refreshing token after {reconnect_attempts} reconnection attempts for {node_info['address']}")
+                    await self.refresh_token()
+                    # Rebuild connections with new token
+                    nodes = await NodesRepository.get_all_nodes()
+                    self.build_connections(nodes)
+                    
+            except InvalidStatusCode as e:
+                logger.error(f"Invalid status code for {node_info['address']}: {e}")
+                if e.status_code == 401:  # Unauthorized
+                    logger.warning(f"Token expired for {node_info['address']}, refreshing...")
+                    await self.refresh_token()
+                    # Rebuild connections with new token
+                    nodes = await NodesRepository.get_all_nodes()
+                    self.build_connections(nodes)
+                    reconnect_attempts = 0
+                else:
+                    reconnect_attempts += 1
+                    
             except Exception as e:
-                logger.error(f"Error connecting to {node_info['address']}: {e}", exc_info=True)
+                logger.error(f"Unexpected error connecting to {node_info['address']}: {e}", exc_info=True)
+                reconnect_attempts += 1
 
-            await asyncio.sleep(self.reconnect_interval)
+            # Check if shutdown was requested
+            if self.shutdown_event.is_set():
+                logger.info(f"Shutdown requested, stopping connection to {node_info['address']}")
+                break
+
+            # Calculate backoff delay (exponential backoff with max limit)
+            delay = min(self.reconnect_interval * (2 ** min(reconnect_attempts, 3)), 60)
+            logger.info(f"Reconnecting to {node_info['address']} in {delay} seconds (attempt {reconnect_attempts + 1})")
+            
+            # Wait with timeout to check shutdown event periodically
+            try:
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=delay)
+                break  # Shutdown was requested
+            except asyncio.TimeoutError:
+                continue  # Continue with reconnection
 
     def build_connections(self, nodes: Sequence[NodeResponse]):
         """
@@ -70,6 +124,9 @@ class WsService:
         Args:
             nodes: Sequence of node responses
         """
+        # Clear existing connections
+        self.connections.clear()
+        
         protocol = 'wss://' if config.settings.ssl_enabled else 'ws://'
         query_params = urlencode({'interval': 5, 'token': self.access_token})
 
@@ -92,8 +149,20 @@ class WsService:
             websocket: WebSocket connection object
             node_info: Dictionary with node information
         """
-        async for message in websocket:
-            await self.process_log(message, node_info)
+        try:
+            async for message in websocket:
+                # Check if shutdown was requested
+                if self.shutdown_event.is_set():
+                    logger.info(f"Shutdown requested, stopping message processing for {node_info['address']}")
+                    break
+                    
+                await self.process_log(message, node_info)
+        except ConnectionClosed:
+            logger.warning(f"Connection closed during message processing for {node_info['address']}")
+            raise  # Re-raise to trigger reconnection logic
+        except Exception as e:
+            logger.error(f"Error processing messages for {node_info['address']}: {e}", exc_info=True)
+            raise  # Re-raise to trigger reconnection logic
 
     async def process_log(self, log, node_info):
         """
@@ -188,23 +257,73 @@ class WsService:
             logger.info(f"Successfully banned {len(ban_tasks)} IPs for user {email}")
 
     async def refresh_token(self):
-        """Refreshes the authorization token."""
-        try:
-            self.access_token = await marz_token.get_token()
-            logger.info("Token successfully refreshed")
-        except Exception as e:
-            logger.error(f"Error refreshing token: {e}", exc_info=True)
+        """Refreshes the authorization token with retry logic."""
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                self.access_token = await marz_token.get_token()
+                logger.info("Token successfully refreshed")
+                return
+            except Exception as e:
+                logger.error(f"Error refreshing token (attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying token refresh in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error("Failed to refresh token after all attempts")
+                    raise
+
+    async def shutdown(self):
+        """Gracefully shuts down the WebSocket service."""
+        logger.info("Initiating graceful shutdown...")
+        self.shutdown_event.set()
+        
+        # Cancel all active tasks
+        for task in self.active_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        
+        logger.info("WebSocket service shutdown complete")
 
 
 def main():
     """Main entry point for WsService when run directly."""
     from logger import log_manager
+    import signal
 
     # Configure logging
     log_manager.configure(log_level=logging.INFO)
     logger.info("Starting WebSocket service")
 
-    asyncio.run(WsService().start())
+    # Create service instance
+    service = WsService()
+    
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        # Schedule shutdown in the event loop
+        asyncio.create_task(service.shutdown())
+    
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        asyncio.run(service.start())
+    except KeyboardInterrupt:
+        logger.info("WebSocket service stopped by user")
+    except Exception as e:
+        logger.error(f"WebSocket service failed: {e}", exc_info=True)
+    finally:
+        # Ensure graceful shutdown
+        if not service.shutdown_event.is_set():
+            asyncio.run(service.shutdown())
 
 
 if __name__ == '__main__':

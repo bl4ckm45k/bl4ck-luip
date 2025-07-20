@@ -1,8 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 router = APIRouter()
 
-
+d = Depends()
 @router.get("/")
 async def core_route():
     return {"message": "This is the core route"}
