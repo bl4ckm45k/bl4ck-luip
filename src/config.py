@@ -170,7 +170,7 @@ class Marzban(BaseModel):
         Whether to read panel logs.
     """
     login: str = Field(..., min_length=3, description="Marzban login")
-    password: str = Field(..., min_length=8, description="Marzban password")
+    password: str = Field(..., min_length=5, description="Marzban password")
     token_lifetime: int = Field(default=1440, ge=1, le=10080, description="Token lifetime in minutes")
     host: str = Field(..., description="Marzban host")
     read_panel: bool = Field(default=False, description="Read panel logs or not")
