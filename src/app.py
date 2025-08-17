@@ -26,8 +26,6 @@ async def lifespan(app: FastAPI):
     ws = WsService()
     asyncio.create_task(ws.start())
     yield
-    logger.info('Shutting down web application')
-    await ws.shutdown()
 
 
 def repeat_unban():
@@ -56,4 +54,4 @@ if __name__ == "__main__":
     import uvicorn
 
     logging.info(f"Starting server with hosts: {config.settings.allowed_hosts}")
-    uvicorn.run(app, host="0.0.0.0", port=7767)
+    uvicorn.run(app, host="0.0.0.0", port=17767)
